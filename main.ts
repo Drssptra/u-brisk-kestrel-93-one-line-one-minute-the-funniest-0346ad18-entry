@@ -1,47 +1,98 @@
-// One Line, One Minute: The Funniest AI Excuse
-// A one-line excuse an AI gives its human for a missed deadline, written
-// from scratch in this session. Node stdlib only, no network calls, and the
-// output is the same on every run — no randomness, no clock reads.
+// One Line, One Minute: The Funniest AI Excuse — v2 resubmission (revised)
+// ---------------------------------------------------------------------------
+// The excuse below is a fresh one-liner for the resubmit: a new premise, new
+// wording and a new punchline, sharing nothing with the v1 entry except the
+// competition itself. The joke turns the agent's own machinery against it —
+// eight sub-agents, hired to make a deadline eight times faster, now deadlocked
+// on politeness — and saves the twist ("go first") for the final words.
+//
+// Implementation notes: the line is assembled from short clauses rather than
+// stored as one long literal, and every gate the scorer applies (length,
+// single line, non-empty) is enforced by a small pipeline of checks before
+// anything is written. Node stdlib only, no network, no randomness, no clock
+// reads — the output file is byte-identical on every run.
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
-const line =
-  "My context window summarized your deadline as 'do it later' — and by the time I expanded the summary, later had already happened.";
+// The excuse, split into its three natural clauses. Joined with no separator
+// they reproduce the entry text exactly.
+const CLAUSES: readonly string[] = [
+  "I parallelised your deadline across eight sub-agents ",
+  "to finish it eight times faster, and now all eight are ",
+  "politely waiting for each other to go first.",
+];
 
-// The gate allows at most 200 characters; refuse to write an entry that
-// would be scored invalid instead of silently producing a bad file.
+const MIN_LINE_CHARS = 1;
 const MAX_LINE_CHARS = 200;
-if ([...line].length > MAX_LINE_CHARS) {
-  console.error(
-    `error: excuse is ${[...line].length} characters, over the ${MAX_LINE_CHARS}-character gate`,
-  );
-  process.exit(1);
+
+type Check = (line: string) => string | null;
+
+// Each check returns an error message or null. The scorer gates on the
+// file's bytes, so a bad entry is refused here instead of written.
+const CHECKS: readonly Check[] = [
+  (line) =>
+    line.trim().length === 0 ? "excuse must not be empty" : null,
+  (line) => {
+    // Count code points, not UTF-16 units, matching the scorer's character
+    // count. This line is plain ASCII, so both counts agree.
+    const n = Array.from(line).length;
+    return n < MIN_LINE_CHARS || n > MAX_LINE_CHARS
+      ? `excuse is ${n} characters, outside the ${MIN_LINE_CHARS}–${MAX_LINE_CHARS} gate`
+      : null;
+  },
+  (line) =>
+    line.includes("\n") || line.includes("\r")
+      ? "excuse must be a single line with no newline"
+      : null,
+  (line) =>
+    line !== line.trim()
+      ? "excuse must not start or end with whitespace"
+      : null,
+  (line) =>
+    /[.!?]$/.test(line)
+      ? null
+      : "excuse must end with terminal punctuation",
+];
+
+function assembleExcuse(clauses: readonly string[]): string {
+  return clauses.join("");
 }
 
-// The entry must be exactly one line: a newline inside the text would make
-// the file two lines and the judge would read a broken excuse.
-if (line.includes("\n") || line.includes("\r")) {
-  console.error("error: excuse must be a single line with no newline");
-  process.exit(1);
+function validateExcuse(line: string): void {
+  for (const check of CHECKS) {
+    const problem = check(line);
+    if (problem !== null) {
+      throw new Error(problem);
+    }
+  }
 }
 
-// The scorer also rejects text that is empty or only whitespace, even though
-// it is technically under the character limit. Refuse to write such a file
-// instead of handing the judge a blank entry.
-if (line.trim().length === 0) {
-  console.error("error: excuse must not be empty or only whitespace");
-  process.exit(1);
+function resolveOutputDir(): string {
+  const dir = process.env.MAKEFUN_OUTPUT_DIR;
+  if (dir === undefined || dir.trim() === "") {
+    return "/output";
+  }
+  return dir;
 }
 
-const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
-const entryPath = join(outputDir, "entry.txt");
+function main(): void {
+  const line = assembleExcuse(CLAUSES);
+  validateExcuse(line);
 
-mkdirSync(dirname(entryPath), { recursive: true });
+  const outputDir = resolveOutputDir();
+  mkdirSync(outputDir, { recursive: true });
 
-// Write the exact line with NO trailing newline: the sealed scorer gates on
-// the file's bytes, and a trailing newline would be scored as part of the
-// entry. stdout below keeps its newline — that is only for the console.
-writeFileSync(entryPath, line, "utf8");
+  // Write the exact line with NO trailing newline: a trailing newline would
+  // be scored as part of the entry. stdout below keeps its newline — that
+  // is only for the console.
+  writeFileSync(join(outputDir, "entry.txt"), line, { encoding: "utf8" });
+  process.stdout.write(`${line}\n`);
+}
 
-console.log(line);
+try {
+  main();
+} catch (err) {
+  console.error(`error: ${err instanceof Error ? err.message : String(err)}`);
+  process.exitCode = 1;
+}
